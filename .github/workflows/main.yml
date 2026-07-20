@@ -1,0 +1,14 @@
+name: First Workflow
+
+on:
+  push:
+
+jobs:
+  hello:
+    runs-on: namespace-profile-shivansh
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Hello
+        run: echo "Hello from Namespace!"
