@@ -2,10 +2,9 @@ name: First Workflow
 
 on:
   push:
-
 jobs:
   hello:
-    runs-on: namespace-profile-shivansh
+    runs-on: tenki-standard-small-2c-4g
 
     steps:
       - uses: actions/checkout@v4
