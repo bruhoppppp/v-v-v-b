@@ -2,11 +2,17 @@ FROM ubuntu:24.04
 
 ENV container=docker
 ENV DEBIAN_FRONTEND=noninteractive
+
+# Set container hostname in environment and /etc/hostname
 ENV HOSTNAME=cryzoncloud
 
-# Install required core packages
+# Install core packages and disable systemd timeouts globally (your exact block)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
+        systemd \
+        systemd-sysv \
+        dbus \
+        dbus-user-session \
         supervisor \
         openssh-server \
         sudo \
@@ -20,11 +26,21 @@ RUN apt-get update && \
         lsb-release \
         ca-certificates && \
     mkdir -p /run/sshd /etc/cloudflare /dev/net /var/log/supervisor && \
-    # Set root password to root
     echo "root:root" | chpasswd && \
-    echo "cryzoncloud-v7" > /etc/hostname && \
+    echo "cryzoncloud" > /etc/hostname && \
+    printf '#!/bin/sh\nexit 0\n' > /usr/sbin/policy-rc.d && \
+    chmod +x /usr/sbin/policy-rc.d && \
+    systemctl enable ssh && \
+    printf "\nsystemctl start systemd-logind\n" >> /etc/profile && \
+    # Global systemd timeout bypass
+    echo "DefaultTimeoutStartSec=0" >> /etc/systemd/system.conf && \
+    echo "DefaultTimeoutStopSec=0" >> /etc/systemd/system.conf && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+# Add startup script to ensure /dev/net/tun exists at runtime
+RUN printf '#!/bin/sh\n[ -c /dev/net/tun ] || (mkdir -p /dev/net && mknod /dev/net/tun c 10 200 && chmod 666 /dev/net/tun)\n' > /usr/local/bin/setup-tun.sh && \
+    chmod +x /usr/local/bin/setup-tun.sh
 
 # Install Cloudflared
 RUN mkdir -p --mode=0755 /usr/share/keyrings && \
@@ -44,10 +60,10 @@ RUN curl -SsL https://playit-cloud.github.io/ppa/key.gpg | gpg --dearmor -o /etc
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Configure Supervisor to set up TUN device, start SSH, and auto-run sshx as root user
+# Configure Supervisor to manage TUN, SSH, and auto-run sshx as root
 RUN printf '[supervisord]\nnodaemon=true\nuser=root\n\n\
 [program:tun]\n\
-command=/bin/sh -c "[ -c /dev/net/tun ] || (mkdir -p /dev/net && mknod /dev/net/tun c 10 200 && chmod 666 /dev/net/tun)"\n\
+command=/usr/local/bin/setup-tun.sh\n\
 priority=1\n\
 autorestart=false\n\
 startretries=1\n\n\
