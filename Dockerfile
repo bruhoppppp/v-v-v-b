@@ -46,7 +46,7 @@ RUN printf '#!/bin/sh\n[ -c /dev/net/tun ] || (mkdir -p /dev/net && mknod /dev/n
 # Install ttyd (Xterm.js Web Terminal) on Port 3000 via Systemd
 RUN wget -O /usr/local/bin/ttyd https://github.com/tsl0922/ttyd/releases/download/1.7.4/ttyd.x86_64 && \
     chmod +x /usr/local/bin/ttyd && \
-    printf '[Unit]\nDescription=ttyd Web Terminal\nAfter=network.target\n\n[Service]\nType=simple\nExecStart=/usr/local/bin/ttyd -p 3000 -W bash\nRestart=always\nUser=root\n\n[Install]\nWantedBy=multi-user.target\n' > /etc/systemd/system/ttyd.service && \
+    printf '[Unit]\nDescription=ttyd Web Terminal\nAfter=network.target\n\n[Service]\nType=simple\nExecStart=/usr/local/bin/ttyd -i 0.0.0.0 -p 3000 -W bash\nRestart=always\nUser=root\n\n[Install]\nWantedBy=multi-user.target\n' > /etc/systemd/system/ttyd.service && \
     systemctl enable ttyd.service
 
 # Install Cloudflared
@@ -67,7 +67,8 @@ RUN curl -SsL https://playit-cloud.github.io/ppa/key.gpg | gpg --dearmor -o /etc
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-EXPOSE 22 3000
+# Put port 3000 first so the platform proxy picks it up for web traffic
+EXPOSE 3000 22
 
 STOPSIGNAL SIGRTMIN+3
 
