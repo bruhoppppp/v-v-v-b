@@ -1,11 +1,13 @@
 FROM ubuntu:24.04
 
+ENV container=docker
 ENV DEBIAN_FRONTEND=noninteractive
 ENV HOSTNAME=cryzoncloud
 
-# Install core packages, ttyd, openssh, cloudflared, and playit
+# Install required core packages
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
+        supervisor \
         openssh-server \
         sudo \
         curl \
@@ -17,23 +19,12 @@ RUN apt-get update && \
         gnupg \
         lsb-release \
         ca-certificates && \
-    # Install ttyd directly from GitHub releases
-    wget -O /usr/local/bin/ttyd https://github.com/tsl0922/ttyd/releases/download/1.7.4/ttyd.x86_64 && \
-    chmod +x /usr/local/bin/ttyd && \
-    mkdir -p /run/sshd /etc/cloudflare /dev/net && \
+    mkdir -p /run/sshd /etc/cloudflare /dev/net /var/log/supervisor && \
+    # Set root password to root
     echo "root:root" | chpasswd && \
     echo "cryzoncloud-v7" > /etc/hostname && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
-
-# Add a runtime setup script to ensure /dev/net/tun exists and start services
-RUN printf '#!/bin/sh\n\
-[ -c /dev/net/tun ] || (mkdir -p /dev/net && mknod /dev/net/tun c 10 200 && chmod 666 /dev/net/tun)\n\
-# Start SSH service\n\
-service ssh start\n\
-# Start ttyd web terminal on port 3000 binding to all interfaces\n\
-exec ttyd -i 0.0.0.0 -p 3000 -W bash\n' > /usr/local/bin/entrypoint.sh && \
-    chmod +x /usr/local/bin/entrypoint.sh
 
 # Install Cloudflared
 RUN mkdir -p --mode=0755 /usr/share/keyrings && \
@@ -53,6 +44,29 @@ RUN curl -SsL https://playit-cloud.github.io/ppa/key.gpg | gpg --dearmor -o /etc
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-EXPOSE 3000 22
+# Configure Supervisor to set up TUN device, start SSH, and auto-run sshx as root user
+RUN printf '[supervisord]\nnodaemon=true\nuser=root\n\n\
+[program:tun]\n\
+command=/bin/sh -c "[ -c /dev/net/tun ] || (mkdir -p /dev/net && mknod /dev/net/tun c 10 200 && chmod 666 /dev/net/tun)"\n\
+priority=1\n\
+autorestart=false\n\
+startretries=1\n\n\
+[program:sshd]\n\
+command=/usr/sbin/sshd -D\n\
+autorestart=true\n\
+priority=10\n\n\
+[program:sshx]\n\
+user=root\n\
+directory=/root\n\
+environment=HOME="/root",USER="root"\n\
+command=/bin/sh -c "curl -sSf https://sshx.io/get | sh -s run"\n\
+autorestart=true\n\
+priority=20\n\
+stdout_logfile=/dev/stdout\n\
+stdout_logfile_maxbytes=0\n\
+stderr_logfile=/dev/stderr\n\
+stderr_logfile_maxbytes=0\n' > /etc/supervisor/conf.d/supervisord.conf
 
-CMD ["/usr/local/bin/entrypoint.sh"]
+EXPOSE 22
+
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
